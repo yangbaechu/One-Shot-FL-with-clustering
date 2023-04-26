@@ -1,6 +1,6 @@
-
 import torch
 import torch.nn.functional as F
+
 
 class ConvNet(torch.nn.Module):
     def __init__(self):
