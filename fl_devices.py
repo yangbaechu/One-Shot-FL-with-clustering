@@ -47,9 +47,9 @@ def copy(target, source):
         target[name].data = source[name].data.clone()
 
 
-def subtract_(target, minuend, subtrahend):
+def get_dW(target, minuend, subtrahend):
     for name in target:
-        target[name].data = minuend[name].data.clone() - subtrahend[name].data.clone()
+        target[name].data += minuend[name].data.clone() - subtrahend[name].data.clone()
 
 
 def reduce_add_average(targets, sources):
@@ -116,6 +116,7 @@ class Client(FederatedTrainingDevice):
 
     def synchronize_with_server(self, server):
         copy(target=self.W, source=server.W)
+        self.W_original = self.W
 
     def compute_weight_update(self, epochs=1, loader=None):
         copy(target=self.W_old, source=self.W)
@@ -126,11 +127,11 @@ class Client(FederatedTrainingDevice):
             self.optimizer,
             epochs,
         )
-        subtract_(target=self.dW, minuend=self.W, subtrahend=self.W_old)
+        get_dW(target=self.dW, minuend=self.W, subtrahend=self.W_old)
         return train_stats
 
     def reset(self):
-        copy(target=self.W, source=self.W_old)
+        copy(target=self.W, source=self.W_original)
 
 
 class Server(FederatedTrainingDevice):
@@ -163,6 +164,22 @@ class Server(FederatedTrainingDevice):
                 targets=[client.W for client in cluster],
                 sources=[client.dW for client in cluster],
             )
+
+        return
+
+    def get_average_dw(self, clients):
+        # Initialize an empty dictionary to store the average dW
+        avg_dW = {}
+
+        # Iterate through each tensor name in the first client's dW to add up dW from all clients
+        for name in clients[0].dW:
+            avg_dW[name] = sum(client.dW[name].data for client in clients)
+
+        # Divide the summed dW by the number of clients to compute the average
+        for name in avg_dW:
+            avg_dW[name] /= len(clients)
+
+        return avg_dW
 
     def compute_max_update_norm(self, cluster):
         return np.max([torch.norm(flatten(client.dW)).item() for client in cluster])
